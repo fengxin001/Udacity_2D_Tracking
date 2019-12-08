@@ -40,6 +40,18 @@ int main(int argc, const char *argv[])
     vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
     bool bVis = false;            // visualize results
 
+    // define output vector -start
+    vector<int> num_detectedKeypoints;
+    vector<float> mean_NeighborSize;
+    vector<float> std_NeighborSize;
+    vector<int> num_matchPoints;
+
+    vector<float> time_detector;
+    vector<float> time_descriptor;
+    vector<float> t_match;
+
+
+    // end
     /* MAIN LOOP OVER ALL IMAGES */
 
     for (size_t imgIndex = 0; imgIndex <= imgEndIndex - imgStartIndex; imgIndex++)
@@ -63,7 +75,9 @@ int main(int argc, const char *argv[])
         DataFrame frame;
         frame.cameraImg = imgGray;
         dataBuffer.push_back(frame);
-
+        if (dataBuffer.size()>dataBufferSize){
+            dataBuffer.erase(dataBuffer.begin());
+        }
         //// EOF STUDENT ASSIGNMENT
         cout << "#1 : LOAD IMAGE INTO BUFFER done" << endl;
 
@@ -79,11 +93,16 @@ int main(int argc, const char *argv[])
 
         if (detectorType.compare("SHITOMASI") == 0)
         {
-            detKeypointsShiTomasi(keypoints, imgGray, false);
+            //detKeypointsShiTomasi(keypoints, imgGray, false);
+            time_detector.push_back(detKeypointsShiTomasi(keypoints, imgGray, false));
+        }
+        else if (detectorType.compare("HARRIS") == 0)
+        {
+            time_detector.push_back(detKeypointsHarris(keypoints, imgGray, false));
         }
         else
         {
-            //...
+            time_detector.push_back(detKeypointsModern(keypoints, imgGray, detectorType, false));
         }
         //// EOF STUDENT ASSIGNMENT
 
@@ -95,8 +114,41 @@ int main(int argc, const char *argv[])
         cv::Rect vehicleRect(535, 180, 180, 150);
         if (bFocusOnVehicle)
         {
-            // ...
+            for (auto it = keypoints.begin(); it < keypoints.end(); it++)
+            {
+                if (!vehicleRect.contains(it->pt))
+                {
+                    keypoints.erase(it);
+                }
+            }
         }
+
+        //// EOF STUDENT ASSIGNMENT
+    
+        // Task MP.7 Counting keypoints
+        
+        cout <<"MP.7: " <<detectorType << ", detected keypoints: ";
+        cout << keypoints.size() << ",  mean neighborhood size: ";
+        float sum = 0.0, mean, variance = 0.0, stdDeviation;
+        if (keypoints.size() > 0) {
+            for (int i = 0; i < keypoints.size(); ++i)
+            {
+                sum += keypoints[i].size;
+            }
+            mean = sum / keypoints.size();
+
+            for (int i = 0; i < keypoints.size(); ++i)
+            {
+                variance += pow(keypoints[i].size - mean, 2);
+            }
+            variance = variance / keypoints.size();
+            stdDeviation = sqrt(variance);
+            cout << mean << ", standard deviation of neighborhood size: ";
+            cout << stdDeviation << endl;
+        }
+        num_detectedKeypoints.push_back(keypoints.size());
+        mean_NeighborSize.push_back(mean);
+        std_NeighborSize.push_back(stdDeviation);
 
         //// EOF STUDENT ASSIGNMENT
 
@@ -125,8 +177,9 @@ int main(int argc, const char *argv[])
         //// -> BRIEF, ORB, FREAK, AKAZE, SIFT
 
         cv::Mat descriptors;
-        string descriptorType = "BRISK"; // BRIEF, ORB, FREAK, AKAZE, SIFT
-        descKeypoints((dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->cameraImg, descriptors, descriptorType);
+        string descriptorType = "ORB"; // BRISK, BRIEF, ORB, FREAK, AKAZE, SIFT
+        time_descriptor.push_back(descKeypoints((dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->cameraImg, descriptors, descriptorType));
+       
         //// EOF STUDENT ASSIGNMENT
 
         // push descriptors for current frame to end of data buffer
@@ -141,8 +194,12 @@ int main(int argc, const char *argv[])
 
             vector<cv::DMatch> matches;
             string matcherType = "MAT_BF";        // MAT_BF, MAT_FLANN
-            string descriptorType = "DES_BINARY"; // DES_BINARY, DES_HOG
-            string selectorType = "SEL_NN";       // SEL_NN, SEL_KNN
+            string des_Type = "DES_BINARY"; // DES_BINARY, DES_HOG
+            if (descriptorType.compare("SIFT") == 0)
+            {
+                des_Type = "DES_HOG";
+            } 
+            string selectorType = "SEL_KNN";       // SEL_NN, SEL_KNN
 
             //// STUDENT ASSIGNMENT
             //// TASK MP.5 -> add FLANN matching in file matching2D.cpp
@@ -150,7 +207,8 @@ int main(int argc, const char *argv[])
 
             matchDescriptors((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints,
                              (dataBuffer.end() - 2)->descriptors, (dataBuffer.end() - 1)->descriptors,
-                             matches, descriptorType, matcherType, selectorType);
+                             matches, des_Type, matcherType, selectorType);
+			num_matchPoints.push_back(matches.size());
 
             //// EOF STUDENT ASSIGNMENT
 
@@ -181,5 +239,14 @@ int main(int argc, const char *argv[])
 
     } // eof loop over all images
 
+
+    num_matchPoints.push_back(-1);
+    std::rotate(num_matchPoints.begin(),num_matchPoints.begin()+ 9,num_matchPoints.end()); // match is between 2 images. so the first value is image2 vs image1
+    cout << "num_detectedKPS  mean_NSize  std_NSize  num_matchPts time_detector  time_descriptor \n";   
+    for (int i = 0; i <= imgEndIndex - imgStartIndex; ++i)
+    {
+       cout << num_detectedKeypoints[i] <<"  ,    "<< mean_NeighborSize[i] << "  ,    "<<std_NeighborSize[i] <<"  ,    "<<num_matchPoints[i]<<"  ,    " 
+        << time_detector[i]<<"  ,    " <<time_descriptor[i]<<"\n";       
+    }
     return 0;
 }
